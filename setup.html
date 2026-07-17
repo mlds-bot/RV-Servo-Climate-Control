@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MMCC Servo Setup</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+:root{--text:#f8fafc;--muted:#a2b1c7;--line:rgba(255,255,255,.13)}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#294b76,#0b1729 45%,#040911);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.app{max-width:610px;margin:auto;padding:18px 15px 36px}.card{background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.025));border:1px solid var(--line);border-radius:26px;padding:20px;margin:14px 0;box-shadow:0 18px 44px rgba(0,0,0,.34)}
+h1{text-align:center;margin:8px 0}.sub,.note{color:var(--muted);text-align:center}.note{font-size:12px;line-height:1.45;margin-top:10px}.row{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line)}.row:last-child{border:0}.value{font-weight:900}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}button{border:0;border-radius:16px;padding:15px 10px;color:#fff;font-weight:900;font-size:15px;cursor:pointer}.blue{background:linear-gradient(#3b82f6,#1d4ed8)}.purple{background:linear-gradient(#8b5cf6,#6d28d9)}.green{background:linear-gradient(#22c55e,#15803d)}.red{background:linear-gradient(#ef4444,#991b1b)}.gray{background:#334155}.wide{grid-column:1/3}
+.position{font-size:42px;text-align:center;font-weight:950;margin:10px 0}.timing label{display:flex;justify-content:space-between;gap:12px;margin:10px 0;color:var(--muted)}input{width:120px;padding:10px;border:1px solid var(--line);border-radius:12px;background:#07111f;color:white;font-size:16px}
+.log{max-height:150px;overflow:auto;font-size:13px;color:#d7dfeb}.log div{padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+</style>
+</head>
+<body>
+<main class="app">
+<h1>Servo Setup</h1><div class="sub">Teach once, save permanently</div>
+
+<section class="card">
+ <div class="row"><span>MQTT</span><span id="mqtt" class="value">Offline</span></div>
+ <div class="row"><span>Estimated Mode</span><span id="mode" class="value">UNKNOWN</span></div>
+ <div class="row"><span>Servo Attached</span><span id="attached" class="value">NO</span></div>
+</section>
+
+<section class="card">
+ <h2>Position</h2>
+ <div id="position" class="position">1050 µs</div>
+ <div class="grid">
+  <button class="gray" onclick="nudge(-25)">−25</button><button class="gray" onclick="nudge(25)">+25</button>
+  <button class="gray" onclick="nudge(-5)">−5</button><button class="gray" onclick="nudge(5)">+5</button>
+  <button class="blue wide" onclick="move()">Move to Position</button>
+ </div>
+ <div class="note">Creep toward the button. Stop when it clicks; do not hold the servo in a stall.</div>
+</section>
+
+<section class="card">
+ <h2>Teach Positions</h2>
+ <div class="grid">
+  <button class="green" onclick="save('SAVE_HOME')">Save Home</button>
+  <button class="purple" onclick="save('SAVE_PREPRESS')">Save Pre-Press</button>
+  <button class="red wide" onclick="save('SAVE_PRESS')">Save Press</button>
+  <button class="blue wide" onclick="servo('EXERCISE')">Exercise Servo — No State Change</button>
+  <button class="gray wide" onclick="servo('DETACH')">Detach Servo</button>
+ </div>
+</section>
+
+<section class="card timing">
+ <h2>Timing</h2>
+ <label>Press hold <input id="hold" type="number" min="100" max="2000" value="350"></label>
+ <label>Between presses <input id="between" type="number" min="300" max="5000" value="900"></label>
+ <label>Motion step delay <input id="step" type="number" min="1" max="40" value="8"></label>
+ <button class="blue" style="width:100%" onclick="saveTiming()">Save Timing</button>
+</section>
+
+<section class="card">
+ <h2>Synchronize Current Mode</h2>
+ <div class="grid">
+  <button class="gray" onclick="sync('OFF')">Thermostat Is OFF</button>
+  <button class="blue" onclick="sync('FAN')">Thermostat Is FAN</button>
+  <button class="green" onclick="sync('COOL')">Thermostat Is COOL</button>
+  <button class="red" onclick="sync('HEAT')">Thermostat Is HEAT</button>
+ </div>
+ <div class="note">Look at the real thermostat before choosing. This becomes the ESP's saved starting state.</div>
+</section>
+
+<section class="card"><div class="grid"><button class="purple" onclick="location.href='index.html'">Main Dashboard</button><button class="blue" onclick="location.href='diagnostics.html'">Diagnostics</button></div></section>
+<section class="card"><div id="log" class="log"></div></section>
+</main>
+
+<script>
+
+const MQTT_URL="wss://b1dcdceb082d4443873bb186cd006f90.s1.eu.hivemq.cloud:8884/mqtt";
+const MQTT_USER="MLDS_CHAT2";
+const MQTT_PASS="PASTE_YOUR_REAL_MQTT_PASSWORD_HERE";
+const BASE="rv/servo";
+
+let client,pulse=1050;const $=id=>document.getElementById(id);
+function log(m){const d=document.createElement("div");d.textContent=new Date().toLocaleTimeString()+"  "+m;$("log").prepend(d)}
+function servo(c){if(!client?.connected){log("MQTT not connected");return}client.publish(`${BASE}/servo/command`,c,{qos:1});log("Sent: "+c)}
+function redraw(){$("position").textContent=pulse+" µs"}
+function nudge(n){pulse=Math.max(500,Math.min(2500,pulse+n));redraw();move()}
+function move(){servo("MOVE,"+pulse)}
+function save(c){servo(c+","+pulse)}
+function saveTiming(){servo(`SET_TIMING,${$("hold").value},${$("between").value},${$("step").value}`)}
+function sync(m){if(confirm(`Confirm the thermostat display currently shows ${m}?`))servo("SYNC,"+m)}
+function connect(){
+ client=mqtt.connect(MQTT_URL,{username:MQTT_USER,password:MQTT_PASS,reconnectPeriod:3000,clientId:"mmcc_setup_"+Math.random().toString(16).slice(2)});
+ client.on("connect",()=>{$("mqtt").textContent="Online";client.subscribe(`${BASE}/#`);servo("STATUS")});
+ client.on("close",()=>$("mqtt").textContent="Offline");
+ client.on("message",(topic,payload)=>{const sub=topic.replace(BASE+"/",""),msg=payload.toString();
+  if(sub==="mode/state")$("mode").textContent=msg;
+  if(sub==="servo/state"){const p=msg.split(","),m={};for(let i=0;i<p.length-1;i+=2)m[p[i]]=p[i+1];
+   if(m.CURRENT){pulse=Number(m.CURRENT);redraw()}if(m.ATTACHED)$("attached").textContent=m.ATTACHED;
+   if(m.HOLD)$("hold").value=m.HOLD;if(m.BETWEEN)$("between").value=m.BETWEEN;if(m.STEP)$("step").value=m.STEP;
+  }
+ });
+}
+connect();redraw();
+</script>
+</body>
+</html>
