@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MMCC Servo Climate</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+:root{--bg:#06101f;--card:#13243d;--text:#f7fafc;--muted:#9fb0c7;--line:rgba(255,255,255,.12);--green:#22c55e;--red:#ef4444;--blue:#38bdf8;--yellow:#fbbf24}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#2b4b76 0,#0b1729 43%,#040911 100%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;min-height:100vh}
+.app{max-width:570px;margin:auto;padding:18px 15px 38px}.card{background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.025));border:1px solid var(--line);border-radius:27px;padding:20px;margin:14px 0;box-shadow:0 18px 44px rgba(0,0,0,.34)}
+.header{text-align:center}.brand{font-size:12px;letter-spacing:.18em;color:var(--muted);font-weight:900}h1{font-size:29px;margin:7px 0 2px}.sub{color:var(--muted)}
+.hero{text-align:center;padding:28px 18px}.temp{font-size:86px;font-weight:950;line-height:.92;letter-spacing:-4px}.temp small{font-size:32px;color:var(--muted);letter-spacing:0}.mode{font-size:23px;font-weight:950;color:var(--blue);margin-top:18px}
+.pills{display:flex;flex-wrap:wrap;gap:9px;justify-content:center;margin-top:18px}.pill{padding:9px 13px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);font-weight:850}.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--red);margin-right:7px}.dot.good{background:var(--green);box-shadow:0 0 10px var(--green)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}button{border:0;border-radius:17px;padding:17px 10px;color:#fff;font-size:16px;font-weight:900;cursor:pointer;box-shadow:0 9px 22px rgba(0,0,0,.25)}.cool{background:linear-gradient(#22c55e,#15803d)}.off{background:linear-gradient(#ef4444,#991b1b)}.fan{background:linear-gradient(#06b6d4,#0e7490)}.blue{background:linear-gradient(#3b82f6,#1d4ed8)}.purple{background:linear-gradient(#8b5cf6,#6d28d9)}.wide{grid-column:1/3}
+.row{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid var(--line)}.row:last-child{border:0}.label{color:var(--muted)}.value{font-weight:900;text-align:right}
+.warning{display:none;border:1px solid rgba(251,191,36,.65);background:rgba(251,191,36,.13);color:#ffe8a3}.warning.show{display:block}.warning h2{margin:0 0 8px;color:var(--yellow)}.warning button{width:100%;margin-top:10px;background:#8a5a00}
+.chartWrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:17px;margin-top:12px}.chartWrap canvas{display:block;width:1200px;max-width:none;height:225px;background:rgba(0,0,0,.19);border-radius:17px}.note{font-size:12px;color:var(--muted);text-align:center;line-height:1.45;margin-top:10px}
+.log{max-height:170px;overflow:auto;font-size:13px;color:#d7dfeb}.log div{padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+</style>
+</head>
+<body>
+<main class="app">
+<header class="header"><div class="brand">MINCH MOD</div><h1>RV Climate Controller</h1><div class="sub">Servo Edition</div></header>
+
+<section id="warning" class="card warning">
+  <h2>Cooling may not be working</h2>
+  <div>The last cooling command did not produce the expected temperature drop. No automatic button press was made.</div>
+  <button onclick="clearWarning()">Acknowledge and Clear Warning</button>
+</section>
+
+<section class="card hero">
+  <div class="temp"><span id="temp">--</span><small>°F</small></div>
+  <div class="pills">
+    <span class="pill"><span id="espDot" class="dot"></span><span id="espText">ESP Offline</span></span>
+    <span class="pill"><span id="mqttDot" class="dot"></span><span id="mqttText">MQTT Offline</span></span>
+    <span class="pill">Humidity <span id="humidity">--</span>%</span>
+  </div>
+  <div id="mode" class="mode">MODE UNKNOWN</div>
+</section>
+
+<section class="card">
+  <div class="grid">
+    <button class="cool" onclick="confirmSend('START_COOLING','Start cooling?')">Start Cooling</button>
+    <button class="off" onclick="confirmSend('STOP_SYSTEM','Stop the thermostat system?')">Stop System</button>
+    <button class="fan" onclick="confirmSend('FAN_ONLY','Switch to fan only?')">Fan Only</button>
+    <button class="blue" onclick="sendMain('STATUS')">Refresh Status</button>
+  </div>
+  <div class="note">Temperature verification can warn you, but it never moves the servo by itself.</div>
+</section>
+
+<section class="card">
+  <div class="row"><span class="label">Estimated Mode</span><span id="modeState" class="value">UNKNOWN</span></div>
+  <div class="row"><span class="label">Cooling Verification</span><span id="verify" class="value">NOT ACTIVE</span></div>
+  <div class="row"><span class="label">Wi-Fi</span><span id="rssi" class="value">-- dBm</span></div>
+  <div class="row"><span class="label">Uptime</span><span id="uptime" class="value">--</span></div>
+  <div class="row"><span class="label">IP Address</span><span id="ip" class="value">--</span></div>
+  <div class="row"><span class="label">Last Update</span><span id="updated" class="value">Never</span></div>
+</section>
+
+<section class="card">
+  <div class="label">Rolling 4-Hour Temperature History</div>
+  <div class="chartWrap" id="chartWrap"><canvas id="chart" width="1200" height="225"></canvas></div>
+  <div class="note">Swipe sideways to review the full history.</div>
+</section>
+
+<section class="card">
+  <div class="grid">
+    <button class="purple" onclick="location.href='setup.html'">Servo Setup</button>
+    <button class="blue" onclick="location.href='diagnostics.html'">Diagnostics</button>
+  </div>
+</section>
+
+<section class="card"><div class="label">Event Log</div><div id="log" class="log"></div></section>
+</main>
+
+<script>
+
+const MQTT_URL="wss://b1dcdceb082d4443873bb186cd006f90.s1.eu.hivemq.cloud:8884/mqtt";
+const MQTT_USER="MLDS_CHAT2";
+const MQTT_PASS="PASTE_YOUR_REAL_MQTT_PASSWORD_HERE";
+const BASE="rv/servo";
+
+let client,lastEsp=0,history=[],warningAlerted=false;
+const $=id=>document.getElementById(id);
+function stamp(){return new Date().toLocaleTimeString()}
+function log(m){const d=document.createElement("div");d.textContent=stamp()+"  "+m;$("log").prepend(d)}
+function setMqtt(v){$("mqttDot").className=v?"dot good":"dot";$("mqttText").textContent=v?"MQTT Online":"MQTT Offline"}
+function setEsp(v){$("espDot").className=v?"dot good":"dot";$("espText").textContent=v?"ESP Online":"ESP Offline"}
+function fmtUptime(s){s=Number(s);const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60);return d?`${d}d ${h}h`:h?`${h}h ${m}m`:`${m}m`}
+function sendMain(c){if(!client?.connected){log("MQTT not connected");return}client.publish(`${BASE}/command`,c,{qos:1});log("Sent: "+c)}
+function confirmSend(c,t){if(confirm(t))sendMain(c)}
+function clearWarning(){sendMain("CLEAR_WARNING");$("warning").classList.remove("show");warningAlerted=false}
+function connect(){
+ client=mqtt.connect(MQTT_URL,{username:MQTT_USER,password:MQTT_PASS,clean:true,reconnectPeriod:3000,connectTimeout:10000,clientId:"mmcc_main_"+Math.random().toString(16).slice(2)});
+ client.on("connect",()=>{setMqtt(true);client.subscribe(`${BASE}/#`,{qos:1});sendMain("STATUS");log("MQTT connected")});
+ client.on("close",()=>setMqtt(false));
+ client.on("error",e=>log("MQTT error: "+e.message));
+ client.on("message",(topic,payload)=>handle(topic.replace(BASE+"/",""),payload.toString()));
+}
+function handle(sub,msg){
+ $("updated").textContent=stamp();
+ if(sub==="online"){lastEsp=Date.now();setEsp(msg==="online")}
+ else if(sub==="temperature_f"){$("temp").textContent=msg.trim()?Number(msg).toFixed(1):"--"}
+ else if(sub==="humidity"){$("humidity").textContent=msg.trim()?Number(msg).toFixed(1):"--"}
+ else if(sub==="mode/state"){$("modeState").textContent=msg;$("mode").textContent=msg==="UNKNOWN"?"MODE SYNC REQUIRED":msg}
+ else if(sub==="cooling_verification"){
+   $("verify").textContent=msg.replaceAll("_"," ");
+   const bad=msg==="COOLING_NOT_VERIFIED";
+   $("warning").classList.toggle("show",bad);
+   if(bad&&!warningAlerted){warningAlerted=true;setTimeout(()=>alert("Cooling may not be working. The expected temperature drop was not detected. No automatic servo press was made."),200)}
+ }
+ else if(sub==="wifi_rssi")$("rssi").textContent=msg+" dBm";
+ else if(sub==="uptime_seconds")$("uptime").textContent=fmtUptime(msg);
+ else if(sub==="ip")$("ip").textContent=msg;
+ else if(sub==="history_4h"){history=msg?msg.split(",").map(Number).filter(Number.isFinite):[];draw();setTimeout(()=>$("chartWrap").scrollLeft=$("chartWrap").scrollWidth,50)}
+ else if(sub==="status")log("Status: "+msg.replaceAll("_"," "));
+ else if(sub==="sensor_status"&&msg!=="OK")log("Sensor: "+msg);
+}
+function draw(){
+ const c=$("chart"),x=c.getContext("2d"),w=c.width,h=c.height;x.clearRect(0,0,w,h);
+ x.strokeStyle="rgba(255,255,255,.14)";for(let i=1;i<4;i++){let y=h*i/4;x.beginPath();x.moveTo(0,y);x.lineTo(w,y);x.stroke()}
+ if(history.length<2){x.fillStyle="#9fb0c7";x.font="16px Arial";x.textAlign="center";x.fillText("Waiting for temperature history...",w/2,h/2);return}
+ let min=Math.min(...history),max=Math.max(...history);if(max-min<4){min-=2;max+=2}
+ const l=44,r=18,t=18,b=36;x.strokeStyle="#38bdf8";x.lineWidth=3;x.beginPath();
+ history.forEach((v,i)=>{let px=l+i/(history.length-1)*(w-l-r),py=h-b-(v-min)/(max-min)*(h-t-b);i?x.lineTo(px,py):x.moveTo(px,py)});x.stroke();
+ x.fillStyle="#9fb0c7";x.font="13px Arial";x.textAlign="left";x.fillText(max.toFixed(0)+"°",6,18);x.fillText(min.toFixed(0)+"°",6,h-b)
+}
+setInterval(()=>{if(lastEsp&&Date.now()-lastEsp>90000)setEsp(false)},5000);
+connect();draw();
+</script>
+</body>
+</html>
