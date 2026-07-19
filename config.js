@@ -13,6 +13,6 @@ window.THERMOSTAT_CONFIG = {
   websocketPort: 8884,
   websocketPath: "/mqtt",
   username: "MLDS_CHAT2",
-  password: "PASTE_YOUR_REAL_MQTT_PASSWORD_HERE",
+  password: "Tonka123",
   topicRoot: "rv/thermostat"
 };
