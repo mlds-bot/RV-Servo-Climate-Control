@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#06101f">
+<title>MMCC RV Thermostat</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="app">
+  <header class="header">
+    <div class="brand">MINCH MOD</div>
+    <h1>RV Thermostat</h1>
+    <div class="sub">Remote Monitor & Servo Button</div>
+  </header>
+
+  <section class="card hero">
+    <div class="temp"><span id="temp">--</span><small>°F</small></div>
+    <div class="pills">
+      <span class="pill"><span id="espDot" class="dot"></span><span id="espText">ESP Offline</span></span>
+      <span class="pill"><span id="mqttDot" class="dot"></span><span id="mqttText">MQTT Offline</span></span>
+      <span class="pill">Humidity <span id="humidity">--</span>%</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <button id="pressBtn" class="press" onclick="pressThermostat()" disabled>
+      Press Thermostat Button
+    </button>
+    <div class="note">
+      This sends one PRESS request only. The ESP firmware owns all servo movement,
+      returns home, settles, and detaches the servo.
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="row"><span class="label">Chip Temperature</span><span id="chipTemp" class="value">-- °F</span></div>
+    <div class="row"><span class="label">Servo State</span><span id="servoState" class="value">--</span></div>
+    <div class="row"><span class="label">Servo Attached</span><span id="servoAttached" class="value">--</span></div>
+    <div class="row"><span class="label">Button Presses</span><span id="pressCount" class="value">--</span></div>
+    <div class="row"><span class="label">Wi-Fi</span><span id="rssi" class="value">-- dBm</span></div>
+    <div class="row"><span class="label">Uptime</span><span id="uptime" class="value">--</span></div>
+    <div class="row"><span class="label">Free Heap</span><span id="heap" class="value">-- KB</span></div>
+    <div class="row"><span class="label">IP Address</span><span id="ip" class="value">--</span></div>
+    <div class="row"><span class="label">Firmware</span><span id="firmware" class="value">--</span></div>
+    <div class="row"><span class="label">Last Update</span><span id="updated" class="value">Never</span></div>
+  </section>
+
+  <section class="card">
+    <div class="grid">
+      <button class="blue" onclick="sendCommand('STATUS')">Refresh Status</button>
+      <button class="red" onclick="rebootEsp()">Reboot ESP</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="label">Event Log</div>
+    <div id="log" class="log"></div>
+  </section>
+</main>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
